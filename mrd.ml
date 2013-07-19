@@ -119,18 +119,31 @@ let buffert = ref ""
 let buffere = ref ""
 let fcg = ref ""
 let cfg = ref ""
+let thisFun = ref ""
 
-let wfcg f1 f2 =
-        fcg := (!fcg ^ Printf.sprintf "%d %d\n" f1 f2)
+let wfcg id f2 =
+        fcg := (!fcg ^ Printf.sprintf "%d %s %s\n" id !thisFun f2)
 
 let wcfg i1 i2 =
         cfg := (!cfg ^ Printf.sprintf "%d %d\n" i1 i2)
 
+let wtFun i t s = 
+	buffert := (!buffert ^ Printf.sprintf "%d %d %s\n" i t s)
+
 let wt i t =
-	buffert := (!buffert ^ Printf.sprintf "%d %d\n" i t)
+        buffert := (!buffert ^ Printf.sprintf "%d %d\n" i t)
 
 let we i e =
 	buffere := (!buffere ^ Printf.sprintf "%d %d\n" i e)
+
+let loge q =
+	E.log "%s" ( "Log: Not Implimented Expression -- " ^ (Pretty.sprint 800 ( Pretty.dprintf " %a\n" d_exp q )))
+
+let logi q =
+        E.log "%s" ( "Log: Not Implimented Instruction -- " ^ (Pretty.sprint 800 ( Pretty.dprintf " %a\n" d_instr q )))
+
+let logs q =
+        E.log "%s" ( "Log: Not Implimented Statement -- " ^ (Pretty.sprint 800 ( Pretty.dprintf " %a\n" d_stmt q )))
 
 let rec mrdvisitExp id (e : exp) =  
    match e with
@@ -162,22 +175,29 @@ let rec mrdvisitExp id (e : exp) =
 	|	BOr -> we id valBOr	
 	|	LAnd -> we id valLAnd	
 	|	LOr -> we id valLOr	 
-)
+	)
   | CastE (_,ex)  -> we id valCastE;mrdvisitExp id ex
   | AddrOf _ -> we id valAddrOf
   | StartOf _ -> we id valStartOf
-  | AlignOf _ | AlignOfE _ | Const _  | Lval _ -> ()
+  | AlignOf _
+  | AlignOfE _ -> loge e
+  | Const _
+  | Lval _ -> ()
 
 and mrdvisitInstr id (i : instr) = 
    match i with
-    Call(_, e, el,l) -> 
+    Call (_, Lval (Var vi, _), el, _) ->
+        List.iter (mrdvisitExp id) el;
+        wfcg id vi.vname;
+        wtFun id valCall vi.vname
+  | Call (_, e, el,l) -> 
 	mrdvisitExp id e; 
 	List.iter (mrdvisitExp id) el;
 	wt id valCall
   | Set (_,e,l) -> 
 	mrdvisitExp id e; 
 	wt id valSet
-  | Asm _ -> E.s (E.unimp "Asm")
+  | Asm _ -> logi i; E.s (E.unimp "Asm")
 
 and mrdvisitStmt (s:stmt) = 
    match s.skind with
@@ -194,8 +214,13 @@ and mrdvisitStmt (s:stmt) =
 	wt s.sid valBreak
   | Continue l ->
 	wt s.sid valContinue
-  | If (e, blk1, blk2, l) ->
-	mrdvisitExp s.sid e;	
+  | If (e, b1, b2, l) ->
+        let getFirstStmtId blk = (List.hd blk.bstmts).sid in
+        let b1_sid = getFirstStmtId b1 in
+        let b2_sid = getFirstStmtId b2 in
+	wcfg s.sid b1_sid;
+	wcfg s.sid b2_sid;
+        mrdvisitExp s.sid e;
 	wt s.sid valIf
   | Block b ->
 	wt s.sid valBlock
@@ -203,9 +228,8 @@ and mrdvisitStmt (s:stmt) =
 	wt s.sid valSwitch
   | Loop _ ->
 	wt s.sid valLoop
-  | TryExcept _ | TryFinally _ -> 
-      E.s (E.unimp "try/except/finally")
-
+  | TryExcept _
+  | TryFinally _ -> logs s
 
 (* initialize variables *)
 let initFuncProcess (fd : fundec) =
@@ -263,11 +287,12 @@ let mrdmain (f : file) =
 	  fcg := "";
 	  iterGlobals f (fun g -> match g with GFun (fd,_) -> 
 					initFuncProcess fd;
+					thisFun := fd.svar.vname;
 					forallStmts mrdvisitStmt fd;
 					finFuncProcess fd;
 					()
 				| _ -> () );
-	  save "fcg" !fcg
+	  save "mrd_fcg" !fcg
 
 let feature : featureDescr =
   { fd_name = "mrd";
