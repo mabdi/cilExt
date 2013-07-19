@@ -70,8 +70,8 @@
 open Cil
 open Pretty
 open Cfg
-open CrestInstrument
 module E=Errormsg
+
 (* CONSTANTS *)
 let valInstr = 10
 let valIf = 20
@@ -114,14 +114,17 @@ let valSizeOf =300
 let valCastE =400
 let valAddrOf =500
 let valStartOf =600
-
 (* END OF CONSTANTS *)
+
+(* variables *)
 let buffert = ref ""
 let buffere = ref ""
 let fcg = ref ""
 let cfg = ref ""
 let thisFun = ref ""
+(* END OF VARIABLES *)
 
+(* Logging and buffering functions *)
 let wfcg id f2 =
         fcg := (!fcg ^ Printf.sprintf "%d %s %s\n" id !thisFun f2)
 
@@ -145,7 +148,9 @@ let logi q =
 
 let logs q =
         E.log "%s" ( "Log: Not Implimented Statement -- " ^ (Pretty.sprint 800 ( Pretty.dprintf " %a\n" d_stmt q )))
+(* END OF LOGGING AND BUFFERING *)
 
+(* Visitor functions *)
 let rec mrdvisitExp id (e : exp) =  
    match e with
     SizeOf _ -> we id valSizeOf
@@ -228,19 +233,21 @@ and mrdvisitStmt (s:stmt) =
 	wt s.sid valLoop
   | TryExcept _
   | TryFinally _ -> logs s
+(* END OF VISITORS *)
 
-(* initialize variables *)
+(* initialize variables foreach function *)
 let initFuncProcess (fd : fundec) =
 	buffert := ("");
 	buffere := ("");
 	cfg := ""
 
+(* save a content in a file *)
 let save filename content =
                 let f = open_out filename in
                 Printf.fprintf f "%s" content ;
                 close_out f
 
-(* write result to file *)
+(* write analyse results to files foreach function *)
 let finFuncProcess (fd : fundec) = 
 	try
 		save ("mrd_st_" ^ fd.svar.vname ^ ".fuzz") !buffert;
@@ -249,7 +256,8 @@ let finFuncProcess (fd : fundec) =
         with x ->
                 failwith ("Failed to write in: " ^ fd.svar.vname ^ "\n")
 
-
+(* do sth foreach statement *)
+(* from CIL CFG Module *)
 let rec forallStmts (todo) (fd : fundec) = 
   begin
     fasBlock todo fd.sbody;
@@ -269,19 +277,18 @@ and fasStmt (todo) (s : stmt) =
       | (Return _ | Break _ | Continue _ | Goto _ | Instr _) -> ()
       | TryExcept _ | TryFinally _ -> E.s (E.unimp "try/except/finally")
   end
+(* END FROM CIL CFG *)
 
+(* MAIN *)
 let mrdmain (f : file) =
           Simplemem.feature.fd_doit f ;
-          iterGlobals f prepareGlobalForCFG ;
+          iterGlobals f (fun g -> match g with GFun(func, _) -> prepareCFG func  | _ -> ()) ;
           Oneret.feature.fd_doit f ;
+	  (* We need this transformation because it adds some new empty instruction in crest cfg *)
           (let ncVisitor = new CrestInstrument.normalizeConditionalsVisitor in
              visitCilFileSameGlobals (ncVisitor :> cilVisitor) f) ;
           clearFileCFG f ;
-          readIdCount () ;
-          readStmtCount () ;
-          readFunCount () ;
-          computeFileCFG f ;
-          handleCallEdgesAndWriteCfg f; 
+	  computeFileCFG f ;
 	  fcg := "";
 	  iterGlobals f (fun g -> match g with GFun (fd,_) -> 
 					initFuncProcess fd;
