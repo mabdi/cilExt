@@ -73,8 +73,7 @@ open Cfg
 open CrestInstrument
 module E=Errormsg
 (* CONSTANTS *)
-let valSet = 11
-let valCall = 12
+let valInstr = 10
 let valIf = 20
 let valGoto = 30
 let valBreak = 40
@@ -84,6 +83,8 @@ let valBlock = 70
 let valSwitch = 80
 let valLoop = 90
 
+let valSet = 700
+let valCall = 701
 let valNeg = 100
 let valBNot = 101
 let valLNot = 102
@@ -127,8 +128,8 @@ let wfcg id f2 =
 let wcfg i1 i2 =
         cfg := (!cfg ^ Printf.sprintf "%d %d\n" i1 i2)
 
-let wtFun i t s = 
-	buffert := (!buffert ^ Printf.sprintf "%d %d %s\n" i t s)
+let weFun i t s = 
+	buffere := (!buffere ^ Printf.sprintf "%d %d %s\n" i t s)
 
 let wt i t =
         buffert := (!buffert ^ Printf.sprintf "%d %d\n" i t)
@@ -189,25 +190,27 @@ and mrdvisitInstr id (i : instr) =
     Call (_, Lval (Var vi, _), el, _) ->
         List.iter (mrdvisitExp id) el;
         wfcg id vi.vname;
-        wtFun id valCall vi.vname
+        weFun id valCall vi.vname
   | Call (_, e, el,l) -> 
 	mrdvisitExp id e; 
 	List.iter (mrdvisitExp id) el;
-	wt id valCall
+	we id valCall
   | Set (_,e,l) -> 
 	mrdvisitExp id e; 
-	wt id valSet
+	we id valSet
   | Asm _ -> logi i; E.s (E.unimp "Asm")
 
 and mrdvisitStmt (s:stmt) = 
+   List.iter (fun dst -> wcfg s.sid dst.sid) s.succs ;
    match s.skind with
     Instr il  -> 
-	List.iter (mrdvisitInstr s.sid ) il;
+	wt s.sid valInstr;
+	List.iter (mrdvisitInstr s.sid ) il
   | Return (Some e, l) -> 
 	mrdvisitExp s.sid e;
-	wt s.sid valReturn
+	wt s.sid valReturn;
   | Return (None, l)  -> 
-	wt s.sid valReturn
+	wt s.sid valReturn;
   | Goto (p,l) ->
 	wt s.sid valGoto
   | Break l ->
@@ -215,16 +218,11 @@ and mrdvisitStmt (s:stmt) =
   | Continue l ->
 	wt s.sid valContinue
   | If (e, b1, b2, l) ->
-        let getFirstStmtId blk = (List.hd blk.bstmts).sid in
-        let b1_sid = getFirstStmtId b1 in
-        let b2_sid = getFirstStmtId b2 in
-	wcfg s.sid b1_sid;
-	wcfg s.sid b2_sid;
         mrdvisitExp s.sid e;
 	wt s.sid valIf
   | Block b ->
 	wt s.sid valBlock
-  | Switch(e,blk,sl,l) -> 
+  | Switch(e,blk,sl,l) -> 	
 	wt s.sid valSwitch
   | Loop _ ->
 	wt s.sid valLoop
@@ -245,9 +243,9 @@ let save filename content =
 (* write result to file *)
 let finFuncProcess (fd : fundec) = 
 	try
-		save ("mrd_st_" ^ fd.svar.vname ) !buffert;
-		save ("mrd_et_" ^ fd.svar.vname ) !buffere;
-		save ("mrd_cfg_" ^ fd.svar.vname ) !cfg
+		save ("mrd_st_" ^ fd.svar.vname ^ ".fuzz") !buffert;
+		save ("mrd_et_" ^ fd.svar.vname ^ ".fuzz") !buffere;
+		save ("mrd_cfg_" ^ fd.svar.vname ^ ".fuzz") !cfg
         with x ->
                 failwith ("Failed to write in: " ^ fd.svar.vname ^ "\n")
 
@@ -290,9 +288,8 @@ let mrdmain (f : file) =
 					thisFun := fd.svar.vname;
 					forallStmts mrdvisitStmt fd;
 					finFuncProcess fd;
-					()
 				| _ -> () );
-	  save "mrd_fcg" !fcg
+	  save "mrd_fcg.fuzz" !fcg
 
 let feature : featureDescr =
   { fd_name = "mrd";
